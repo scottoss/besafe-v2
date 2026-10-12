@@ -105,12 +105,16 @@ docker push ghcr.io/besafe-network/discord-bot:latest
 ## 🚀 Deploying to Kubernetes
 
 ### Step 1: Configure Secrets
-Edit `k8s/secrets.yaml` with your production values (`MONGO_URI`, `DISCORD_TOKEN`, `JWT_SECRET`).
+Edit the `Secret` resource in `k8s/kubernetes.yaml` (or `kubernetes.yaml`) with your production credentials (`MONGO_URI`, `DISCORD_TOKEN`, `JWT_SECRET`).
 
-### Step 2: Apply All Manifests
-Deploy the entire stack with a single command using Kustomize:
+### Step 2: Apply the Combined Manifest
+Deploy the entire stack (Namespace, ConfigMap, Secrets, Services, Deployments, StatefulSet, Ingress, and HPAs) in a single command:
 ```bash
-kubectl apply -k k8s/
+# Apply from the repository root:
+kubectl apply -f kubernetes.yaml
+
+# Or apply from the k8s directory:
+kubectl apply -f k8s/kubernetes.yaml
 ```
 
 ### Step 3: Verify Pods & Shards

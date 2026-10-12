@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: besafe-network
-  labels:
-    app.kubernetes.io/name: besafe-network
-    app.kubernetes.io/part-of: besafe

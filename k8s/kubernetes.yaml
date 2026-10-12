@@ -1,0 +1,459 @@
+# ==============================================================================
+# BeSafe Network — Complete All-in-One Kubernetes Manifest
+# Services: Web Dashboard, VRChat Bot API & Worker, Discord Bot (Stateful Sharding)
+# Apply command: kubectl apply -f k8s/kubernetes.yaml
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Namespace
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: besafe-network
+  labels:
+    app.kubernetes.io/name: besafe-network
+    app.kubernetes.io/part-of: besafe
+
+---
+# ------------------------------------------------------------------------------
+# 2. ConfigMap (Common Environment Configuration)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: besafe-config
+  namespace: besafe-network
+  labels:
+    app.kubernetes.io/part-of: besafe
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  VRCHAT_BOT_PORT: "3001"
+  DISCORD_BOT_PORT: "3002"
+  APP_URL: "https://besafe.network"
+  VRCHAT_SERVICE_URL: "http://vrchat-bot-service.besafe-network.svc.cluster.local:3001"
+  DISCORD_SERVICE_URL: "http://discord-bot-service.besafe-network.svc.cluster.local:3002"
+  DISCORD_SHARDING_MODE: "stateful"
+  SHARD_COUNT: "4"
+  VRC_TOTAL_INSTANCES: "2"
+
+---
+# ------------------------------------------------------------------------------
+# 3. Secret (Production Credentials & Sensitive Tokens)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: besafe-secrets
+  namespace: besafe-network
+  labels:
+    app.kubernetes.io/part-of: besafe
+type: Opaque
+stringData:
+  MONGO_URI: "mongodb+srv://user:password@cluster.mongodb.net/besafe?retryWrites=true&w=majority"
+  JWT_SECRET: "your-super-secret-jwt-signing-key-here"
+  DISCORD_TOKEN: "your-discord-bot-token-here"
+  DISCORD_CLIENT_ID: "your-discord-client-id-here"
+  SMTP_HOST: "smtp.mailgun.org"
+  SMTP_PORT: "587"
+  SMTP_USER: "postmaster@besafe.network"
+  SMTP_PASS: "smtp-password-here"
+
+---
+# ------------------------------------------------------------------------------
+# 4. Web Dashboard Service (ClusterIP)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-dashboard-service
+  namespace: besafe-network
+  labels:
+    app: web-dashboard
+    app.kubernetes.io/component: dashboard
+spec:
+  type: ClusterIP
+  selector:
+    app: web-dashboard
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+      protocol: TCP
+
+---
+# ------------------------------------------------------------------------------
+# 5. VRChat Bot API Service (ClusterIP)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: vrchat-bot-service
+  namespace: besafe-network
+  labels:
+    app: vrchat-bot
+    app.kubernetes.io/component: vrchat-worker
+spec:
+  type: ClusterIP
+  selector:
+    app: vrchat-bot
+  ports:
+    - name: http
+      port: 3001
+      targetPort: 3001
+      protocol: TCP
+
+---
+# ------------------------------------------------------------------------------
+# 6. Discord Bot Service (ClusterIP for Internal Telemetry & Health)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: discord-bot-service
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+    app.kubernetes.io/component: bot-shard
+spec:
+  type: ClusterIP
+  selector:
+    app: discord-bot
+  ports:
+    - name: metrics-http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP
+
+---
+# ------------------------------------------------------------------------------
+# 7. Discord Bot Headless Service (Direct Pod / Shard DNS Resolution)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: discord-bot-headless
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+spec:
+  clusterIP: None
+  selector:
+    app: discord-bot
+  ports:
+    - name: metrics-http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP
+
+---
+# ------------------------------------------------------------------------------
+# 8. Web Dashboard Deployment (Stateless Web Tier)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-dashboard
+  namespace: besafe-network
+  labels:
+    app: web-dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: besafe
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: web-dashboard
+  template:
+    metadata:
+      labels:
+        app: web-dashboard
+        app.kubernetes.io/component: dashboard
+    spec:
+      containers:
+        - name: web-dashboard
+          image: ghcr.io/besafe-network/web-dashboard:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVICE_NAME
+              value: "web-dashboard"
+          envFrom:
+            - configMapRef:
+                name: besafe-config
+            - secretRef:
+                name: besafe-secrets
+          ports:
+            - containerPort: 3000
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+---
+# ------------------------------------------------------------------------------
+# 9. VRChat Bot API & Worker Deployment
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vrchat-bot
+  namespace: besafe-network
+  labels:
+    app: vrchat-bot
+    app.kubernetes.io/component: vrchat-worker
+    app.kubernetes.io/part-of: besafe
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: vrchat-bot
+  template:
+    metadata:
+      labels:
+        app: vrchat-bot
+        app.kubernetes.io/component: vrchat-worker
+    spec:
+      containers:
+        - name: vrchat-bot
+          image: ghcr.io/besafe-network/vrchat-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVICE_NAME
+              value: "vrchat-bot"
+            - name: VRC_INSTANCE_ID
+              value: "0"
+            - name: VRC_TOTAL_INSTANCES
+              value: "1"
+          envFrom:
+            - configMapRef:
+                name: besafe-config
+            - secretRef:
+                name: besafe-secrets
+          ports:
+            - containerPort: 3001
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 800m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+---
+# ------------------------------------------------------------------------------
+# 10. Discord Bot StatefulSet (Distributed Sharding with Pod Ordinals)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: discord-bot
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+    app.kubernetes.io/component: bot-shard
+    app.kubernetes.io/part-of: besafe
+spec:
+  serviceName: discord-bot-service
+  # Replicas = Total Discord shards across the cluster (e.g. 4 shards across 4 pods)
+  replicas: 4
+  revisionHistoryLimit: 5
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: discord-bot
+  template:
+    metadata:
+      labels:
+        app: discord-bot
+        app.kubernetes.io/component: bot-shard
+    spec:
+      containers:
+        - name: discord-bot
+          image: ghcr.io/besafe-network/discord-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVICE_NAME
+              value: "discord-bot"
+            - name: DISCORD_SHARDING_MODE
+              value: "stateful"
+            - name: SHARD_COUNT
+              value: "4"
+          envFrom:
+            - configMapRef:
+                name: besafe-config
+            - secretRef:
+                name: besafe-secrets
+          ports:
+            - containerPort: 3002
+              name: metrics-http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 300m
+              memory: 384Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics-http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics-http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+
+---
+# ------------------------------------------------------------------------------
+# 11. Web Dashboard Ingress (Nginx / HTTPS Ingress Controller)
+# ------------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-dashboard-ingress
+  namespace: besafe-network
+  labels:
+    app: web-dashboard
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  tls:
+    - hosts:
+        - besafe.network
+        - www.besafe.network
+      secretName: besafe-tls-cert
+  rules:
+    - host: besafe.network
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-dashboard-service
+                port:
+                  number: 80
+    - host: www.besafe.network
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-dashboard-service
+                port:
+                  number: 80
+
+---
+# ------------------------------------------------------------------------------
+# 12. HorizontalPodAutoscalers (Web Dashboard & VRChat Bot API)
+# ------------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-dashboard-hpa
+  namespace: besafe-network
+  labels:
+    app: web-dashboard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-dashboard
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vrchat-bot-hpa
+  namespace: besafe-network
+  labels:
+    app: vrchat-bot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vrchat-bot
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
