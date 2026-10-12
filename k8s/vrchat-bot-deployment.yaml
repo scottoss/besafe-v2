@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vrchat-bot
+  namespace: besafe-network
+  labels:
+    app: vrchat-bot
+    app.kubernetes.io/component: vrchat-worker
+    app.kubernetes.io/part-of: besafe
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: vrchat-bot
+  template:
+    metadata:
+      labels:
+        app: vrchat-bot
+        app.kubernetes.io/component: vrchat-worker
+    spec:
+      containers:
+        - name: vrchat-bot
+          image: ghcr.io/besafe-network/vrchat-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVICE_NAME
+              value: "vrchat-bot"
+            - name: VRC_INSTANCE_ID
+              value: "0"
+            - name: VRC_TOTAL_INSTANCES
+              value: "1"
+          envFrom:
+            - configMapRef:
+                name: besafe-config
+            - secretRef:
+                name: besafe-secrets
+          ports:
+            - containerPort: 3001
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 800m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2

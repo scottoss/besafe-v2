@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: discord-bot
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+    app.kubernetes.io/component: bot-shard
+    app.kubernetes.io/part-of: besafe
+spec:
+  serviceName: discord-bot-service
+  # Replicas equals the number of shards (e.g. 4 shards across 4 pods)
+  replicas: 4
+  revisionHistoryLimit: 5
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: discord-bot
+  template:
+    metadata:
+      labels:
+        app: discord-bot
+        app.kubernetes.io/component: bot-shard
+    spec:
+      containers:
+        - name: discord-bot
+          image: ghcr.io/besafe-network/discord-bot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SERVICE_NAME
+              value: "discord-bot"
+            - name: DISCORD_SHARDING_MODE
+              value: "stateful"
+            # Total shards configured across the cluster
+            - name: SHARD_COUNT
+              value: "4"
+          envFrom:
+            - configMapRef:
+                name: besafe-config
+            - secretRef:
+                name: besafe-secrets
+          ports:
+            - containerPort: 3002
+              name: metrics-http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 300m
+              memory: 384Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics-http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics-http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2

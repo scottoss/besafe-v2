@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vrchat-bot-service
+  namespace: besafe-network
+  labels:
+    app: vrchat-bot
+    app.kubernetes.io/component: vrchat-worker
+spec:
+  type: ClusterIP
+  selector:
+    app: vrchat-bot
+  ports:
+    - name: http
+      port: 3001
+      targetPort: 3001
+      protocol: TCP

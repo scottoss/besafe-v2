@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: discord-bot-service
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+    app.kubernetes.io/component: bot-shard
+spec:
+  # ClusterIP service for routing to any ready shard
+  type: ClusterIP
+  selector:
+    app: discord-bot
+  ports:
+    - name: metrics-http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: discord-bot-headless
+  namespace: besafe-network
+  labels:
+    app: discord-bot
+spec:
+  # Headless service for direct DNS pod addressing (discord-bot-0.discord-bot-headless...)
+  clusterIP: None
+  selector:
+    app: discord-bot
+  ports:
+    - name: metrics-http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP

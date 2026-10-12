@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: besafe-config
+  namespace: besafe-network
+  labels:
+    app.kubernetes.io/part-of: besafe
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  VRCHAT_BOT_PORT: "3001"
+  DISCORD_BOT_PORT: "3002"
+  APP_URL: "https://besafe.network"
+  VRCHAT_SERVICE_URL: "http://vrchat-bot-service.besafe-network.svc.cluster.local:3001"
+  DISCORD_SERVICE_URL: "http://discord-bot-service.besafe-network.svc.cluster.local:3002"
+  DISCORD_SHARDING_MODE: "stateful"
+  SHARD_COUNT: "4"
+  VRC_TOTAL_INSTANCES: "2"
