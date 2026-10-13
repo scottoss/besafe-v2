@@ -1,26 +1,19 @@
 # ==========================================
 # Dockerfile: Discord Bot Shard Worker Service
 # ==========================================
-FROM node:22-alpine
+ARG RUNTIME_DEPS_IMAGE=node:22-bookworm-slim
+FROM ${RUNTIME_DEPS_IMAGE} AS runner
 
 WORKDIR /app
-ENV NODE_ENV=production
-ENV SERVICE_NAME=discord-bot
-ENV DISCORD_BOT_PORT=3002
+ENV NODE_ENV=production \
+	SERVICE_NAME=discord-bot \
+	HOST=0.0.0.0 \
+	DISCORD_BOT_PORT=3002
 
-# Install ffmpeg and build dependencies for native audio modules
-RUN apk add --no-cache ffmpeg python3 make g++
-
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-COPY services ./services
-COPY server.ts ./server.ts
-
-RUN npm install -g tsx
+COPY --chown=node:node services ./services
 
 EXPOSE 3002
 
 USER node
 
-CMD ["tsx", "services/discord-bot/index.ts"]
+CMD ["./node_modules/.bin/tsx", "services/discord-bot/index.ts"]
